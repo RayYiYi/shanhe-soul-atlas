@@ -1,0 +1,32 @@
+name: Verify public quiz
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - .github/workflows/verify-pages.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check the public Pages response against index.html
+        shell: bash
+        run: |
+          url='https://rayyiyi.github.io/shanhe-soul-atlas/'
+          received="$RUNNER_TEMP/quiz-from-pages.html"
+          for attempt in {1..24}; do
+            if curl --silent --show-error --fail --location --max-time 10 "$url" --output "$received" && cmp -s index.html "$received"; then
+              echo "Anonymous HTTPS response matches the released quiz."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Public Pages response did not match index.html within the verification window."
+          exit 1
