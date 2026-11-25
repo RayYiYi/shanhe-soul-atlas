@@ -1,4 +1,4 @@
-name: Verify public quiz
+name: Publish and verify GitHub Pages
 on:
   push:
     branches: [main]
@@ -6,27 +6,63 @@ on:
       - index.html
       - .github/workflows/verify-pages.yml
   workflow_dispatch:
-permissions:
-  contents: read
+permissions: {}
+concurrency:
+  group: publish-quiz-pages
+  cancel-in-progress: false
 jobs:
-  verify:
+  package:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Check the public Pages response against index.html
+      - name: Prepare the standalone HTML
+        run: |
+          mkdir -p _site
+          cp index.html _site/index.html
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+  deploy:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.publish.outputs.page_url }}
+    steps:
+      - name: Publish the quiz
+        id: publish
+        uses: actions/deploy-pages@v4
+  verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify the anonymous Pages response
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
         shell: bash
         run: |
-          url='https://rayyiyi.github.io/shanhe-soul-atlas/'
           received="$RUNNER_TEMP/quiz-from-pages.html"
           for attempt in {1..24}; do
-            if curl --silent --show-error --fail --location --max-time 10 "$url" --output "$received" && cmp -s index.html "$received"; then
-              echo "Anonymous HTTPS response matches the released quiz."
+            if curl --silent --show-error --fail --location --max-time 10 "$PAGE_URL" --output "$received" && cmp -s index.html "$received"; then
+              echo "Verified public quiz at $PAGE_URL"
               exit 0
             fi
             sleep 15
           done
-          echo "Public Pages response did not match index.html within the verification window."
+          echo "Public Pages response did not match the released index.html."
           exit 1
